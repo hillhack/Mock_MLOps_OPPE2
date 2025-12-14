@@ -30,7 +30,7 @@ jobs:
       - name: Install dependencies
         run: |
           pip install --upgrade pip
-          pip install -r req.txt
+          pip install -r requirements.txt
           pip install pytest pandera scikit-learn pandas matplotlib dvc[gcs]
 
       # 4️⃣ Authenticate to Google Cloud
