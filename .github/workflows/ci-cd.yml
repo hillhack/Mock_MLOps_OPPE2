@@ -3,16 +3,13 @@ run-name: CI/CD on ${{ github.ref_name }} triggered by @${{ github.actor }}
 
 on:
   push:
-    branches: [ dev, main ]
-  pull_request:
-    branches: [ dev, main ]
+    branches: [ main ]
 
 jobs:
-  test:
+  build-and-push:
     runs-on: ubuntu-latest
 
     permissions:
-      pull-requests: write
       contents: write
 
     steps:
@@ -20,7 +17,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 2️⃣ Python setup
+      # 2️⃣ Set up Python
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -31,7 +28,6 @@ jobs:
         run: |
           pip install --upgrade pip
           pip install -r requirements.txt
-          pip install pytest pandera scikit-learn pandas matplotlib dvc[gcs]
 
       # 4️⃣ Authenticate to Google Cloud
       - name: Authenticate to Google Cloud
@@ -39,39 +35,35 @@ jobs:
         with:
           credentials_json: ${{ secrets.KEY }}
 
-      # 5️⃣ Pull data using DVC
-      - name: Configure DVC and Pull Data
+      # 5️⃣ Configure Docker for Artifact Registry
+      - name: Configure Docker for Artifact Registry
         run: |
-          dvc remote list
-          dvc pull
+          gcloud auth configure-docker us-central1-docker.pkg.dev --quiet
 
-      # 6️⃣ Generate timestamp for versioned reports
-      - name: Generate Timestamp
+      # 6️⃣ Build Docker image
+      - name: Build Docker image
         run: |
-          echo "TIMESTAMP=$(date +'%Y-%m-%d_%H-%M-%S')" >> $GITHUB_ENV
+          docker build -t fraud-api:latest .
 
-      # 7️⃣ Run tests (this should generate cml_report.md & plots)
-      - name: Run Tests
+      # 7️⃣ Tag & Push Docker image
+      - name: Push Docker image to Artifact Registry
         run: |
-          pytest tests/test_evaluation_1.py
+          docker tag fraud-api:latest \
+          us-central1-docker.pkg.dev/clean-abacus-473803-a2/fraud-detection/fraud-api:latest
+      
+          docker push \
+          us-central1-docker.pkg.dev/clean-abacus-473803-a2/fraud-detection/fraud-api:latest
 
-      # 8️⃣ Setup CML (correct way)
+      # 8️⃣ Setup CML
       - name: Setup CML
         uses: iterative/setup-cml@v2
 
-      # 9️⃣ Comment results on PR / commit
-      - name: Comment test results with CML
+      # 9️⃣ CML Status Comment
+      - name: Comment CI/CD status with CML
         env:
           REPO_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          echo "## CI/CD Status" > cml_report.md
+          echo "- Docker image built successfully" >> cml_report.md
+          echo "- Image pushed to Google Artifact Registry" >> cml_report.md
           cml comment create cml_report.md
-
-      # 🔟 Upload artifacts to GCS
-      - name: Upload Report Artifacts to GCS
-        if: success()
-        run: |
-          gcloud storage cp cml_report.md \
-          gs://mlops-week02-ga02-electric-wave-472614-d5/reports/${{ github.ref_name }}-${{ env.TIMESTAMP }}/
-
-          gcloud storage cp confusion_matrix.png \
-          gs://mlops-week02-ga02-electric-wave-472614-d5/reports/${{ github.ref_name }}-${{ env.TIMESTAMP }}/
