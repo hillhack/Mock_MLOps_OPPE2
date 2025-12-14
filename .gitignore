@@ -1,3 +1,5 @@
 data
 transactions.csv
 *.joblib
+.ipynb_checkpoints/
+train.ipynb
